@@ -19,6 +19,12 @@ func initDatabase() {
 	// Create table if not exists
 	statement, _ := db.Prepare("CREATE TABLE IF NOT EXISTS images (path TEXT, checksum TEXT, decision TEXT DEFAULT 'undecided')")
 	statement.Exec()
+
+	statement, _ = db.Prepare("CREATE INDEX path_index ON images (path);")
+	statement.Exec()
+
+	statement, _ = db.Prepare("CREATE INDEX checksum_index ON images (checksum);")
+	statement.Exec()
 }
 
 func loadExistingFiles() {

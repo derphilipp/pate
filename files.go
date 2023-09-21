@@ -4,10 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/charlievieth/fastwalk"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -42,21 +45,53 @@ func scanDirectory(dir string, app fyne.App) {
 	var totalFiles, imageFiles int
 	var allImageFiles []string
 
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	var mu sync.Mutex
+
+	// Create a channel to control the number of concurrent goroutines
+	sem := make(chan struct{}, 4) // Assuming 4 cores, adjust as needed
+
+	var wg sync.WaitGroup
+
+	conf := fastwalk.Config{
+		Follow: false,
+	}
+
+	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		totalFiles++
-		if totalFiles%10 == 0 {
-			progressLabel.SetText(fmt.Sprintf("Found %d images out of %d files", imageFiles, totalFiles))
-		}
 
-		if isImage(path) {
-			imageFiles++
-			allImageFiles = append(allImageFiles, path)
-		}
+		sem <- struct{}{} // Acquire a token
+		wg.Add(1)
+
+		go func(p string) {
+			defer func() {
+				<-sem // Release the token
+				wg.Done()
+			}()
+
+			if isImage(p) {
+				mu.Lock()
+				imageFiles++
+				allImageFiles = append(allImageFiles, p)
+				mu.Unlock()
+			}
+
+			mu.Lock()
+			totalFiles++
+			if totalFiles%10 == 0 {
+				progressLabel.SetText(fmt.Sprintf("Found %d images out of %d files", imageFiles, totalFiles))
+			}
+			mu.Unlock()
+		}(path)
+
 		return nil
-	})
+	}
+
+	fastwalk.Walk(&conf, dir, walkFn)
+
+	wg.Wait() // Wait for all goroutines to finish
+
 	insertImagePathsIntoDatabase(allImageFiles)
 	progress.Stop()
 	fmt.Printf("DONE")
