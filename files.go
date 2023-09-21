@@ -4,10 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -17,37 +17,141 @@ import (
 // Supported image extensions
 var imageExtensions = []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
 
-func scanDirectory(dirPath string, app fyne.App) {
-	// Initialize the SQLite database (assuming you have a function for this)
-	initDatabase()
+func isImage(path string) bool {
+	// Get the file extension
+	ext := strings.ToLower(filepath.Ext(path))
 
-	// Recursive function to scan directories for image files
-	var scan func(path string)
-	scan = func(path string) {
-		files, err := os.ReadDir(path)
+	// Check if the extension is in the list of supported image extensions
+	for _, imageExt := range imageExtensions {
+		if ext == imageExt {
+			return true
+		}
+	}
+	return false
+}
+
+func scanDirectory(dir string, app fyne.App) {
+	// findFilesProgres := widget.NewProgressBarInfinite()
+	progress := widget.NewProgressBarInfinite()
+	progressLabel := widget.NewLabel("Searching files")
+	progressContainer := container.NewVBox(progressLabel, progress)
+	progressWindow := app.NewWindow("Scanning Progress")
+	progressWindow.SetContent(progressContainer)
+	progressWindow.Show()
+
+	var totalFiles, imageFiles int
+	var allImageFiles []string
+
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Println("Error reading directory:", err)
-			return
+			return nil
+		}
+		totalFiles++
+		if totalFiles%10 == 0 {
+			progressLabel.SetText(fmt.Sprintf("Found %d images out of %d files", imageFiles, totalFiles))
 		}
 
-		for _, file := range files {
-			fullPath := filepath.Join(path, file.Name())
+		if isImage(path) {
+			imageFiles++
+			allImageFiles = append(allImageFiles, path)
+		}
+		return nil
+	})
+	insertImagePathsIntoDatabase(allImageFiles)
+	progress.Stop()
+	fmt.Printf("DONE")
+	progressWindow.Close()
+}
 
-			if file.IsDir() {
-				scan(fullPath)
-			} else if isImageFile(fullPath) { // Assuming you have a function to check if a file is an image
-				// Insert the image path into the SQLite database
-				insertImagePathIntoDatabase(fullPath)
+func checksumFiles(app fyne.App) {
+	amount := countNonchecksummedFiles()
+	uncheckedImages, _ := getUnchecksummedImagesFromDatabase()
+	progress := widget.NewProgressBar()
+	progressLabel := widget.NewLabel("Checksumming files")
+	progressContainer := container.NewVBox(progressLabel, progress)
+	progressWindow := app.NewWindow("Checksum Progress")
+
+	progressWindow.SetContent(progressContainer)
+	progressWindow.Show()
+
+	const numWorkers = 16
+
+	inputChan := make(chan string, amount)
+	doneChan := make(chan int, numWorkers)
+	batchChan := make(chan FileChecksum, amount)
+
+	go dbWriter(batchChan)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go checksumWorker(inputChan, batchChan, doneChan, &wg)
+	}
+
+	go func() {
+		for _, filePath := range uncheckedImages {
+			inputChan <- filePath
+		}
+		fmt.Printf("Done inputting....")
+		close(inputChan)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(doneChan)
+		close(batchChan)
+	}()
+
+	processedCount := 0
+	for {
+		select {
+		// case result := <-outputChan:
+		//	fmt.Printf("File: %s, Checksum: %s\n", result.FilePath, result.FilePath)
+
+		case justProcessed := <-doneChan:
+			// fmt.Printf("Just done %d\n", justProcessed)
+			processedCount += justProcessed
+			progress.SetValue(float64(processedCount) / float64(amount))
+			progressLabel.SetText(fmt.Sprintf("Processed %d out of %d files", processedCount, amount))
+			// fmt.Printf("Processed %d out of %d files\n", processedCount, amount)
+
+			if int64(processedCount) == amount {
+				break
 			}
 		}
 	}
-
-	// Start scanning from the selected directory
-	scan(dirPath)
-
-	// Calculate checksums for the images found
-	calculateChecksums(app)
+	/*
+		for i, uncheckedImage := range uncheckedImages {
+			chk, _ := calculateChecksum(uncheckedImage)
+			updateChecksumInDatabase(uncheckedImage, chk)
+			progressLabel.SetText(fmt.Sprintf("Calculated %d out of %d checksums", i, amount))
+			progress.SetValue(float64(i) / float64(amount))
+		}
+	*/
+	progressWindow.Close()
 }
+
+// func checksumFilesPlain(app fyne.App) {
+// 	amount := countNonchecksummedFiles()
+// 	uncheckedImages, _ := getUnchecksummedImagesFromDatabase()
+// 	progress := widget.NewProgressBar()
+// 	progressLabel := widget.NewLabel("Checksumming files")
+// 	progressContainer := container.NewVBox(progressLabel, progress)
+// 	progressWindow := app.NewWindow("Checksum Progress")
+
+// 	progressWindow.SetContent(progressContainer)
+// 	progressWindow.Show()
+
+// 	for i, uncheckedImage := range uncheckedImages {
+// 		chk, _ := calculateChecksum(uncheckedImage)
+// 		updateChecksumInDatabase(uncheckedImage, chk)
+// 		progressLabel.SetText(fmt.Sprintf("Calculated %d out of %d checksums", i, amount))
+// 		progress.SetValue(float64(i) / float64(amount))
+// 	}
+
+// 	progressWindow.Close()
+// }
 
 func calculateChecksum(filePath string) (string, error) {
 	fileData, err := os.ReadFile(filePath)
@@ -59,55 +163,56 @@ func calculateChecksum(filePath string) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-func calculateChecksums(app fyne.App) {
-	progressWindow := app.NewWindow("Calculating Checksums")
-	progressWindow.Resize(fyne.NewSize(400, 150))
+// func calculateChecksums(app fyne.App) {
+// 	progressWindow := app.NewWindow("Calculating Checksums")
+// 	progressWindow.Resize(fyne.NewSize(400, 150))
 
-	// Create a progress bar
-	progressBar := widget.NewProgressBarInfinite()
+// 	// Create a progress bar
+// 	progressBar := widget.NewProgressBarInfinite()
 
-	// Label to display number of images found
-	imageCountLabel := widget.NewLabel("Images found: 0")
+// 	// Label to display number of images found
+// 	imageCountLabel := widget.NewLabel("Images found: 0")
 
-	content := container.NewVBox(
-		widget.NewLabel("Calculating checksums..."),
-		progressBar,
-		imageCountLabel,
-	)
-	progressWindow.SetContent(content)
-	progressWindow.Show()
+// 	content := container.NewVBox(
+// 		widget.NewLabel("Calculating checksums..."),
+// 		progressBar,
+// 		imageCountLabel,
+// 	)
+// 	progressWindow.SetContent(content)
+// 	progressWindow.Show()
 
-	go func() {
-		// Assuming you have a function getImagesFromDatabase() that retrieves all images from the database
-		images, err := getImagesFromDatabase()
-		if err != nil {
-			log.Println("Error getting images from database:", err)
-			return
-		}
+// 	go func() {
+// 		// Assuming you have a function getImagesFromDatabase() that retrieves all images from the database
+// 		images, err := getImagesFromDatabase()
+// 		if err != nil {
+// 			log.Println("Error getting images from database:", err)
+// 			return
+// 		}
 
-		for i, imagePath := range images {
-			// Assuming you have a function calculateChecksum(imagePath) that calculates the checksum of an image
-			checksum, err := calculateChecksum(imagePath)
-			if err != nil {
-				log.Println("Error calculating checksum:", err)
-				continue
-			}
+// 		for i, imagePath := range images {
+// 			// Assuming you have a function calculateChecksum(imagePath) that calculates the checksum of an image
+// 			checksum, err := calculateChecksum(imagePath)
+// 			if err != nil {
+// 				log.Println("Error calculating checksum:", err)
+// 				continue
+// 			}
 
-			// Update the database with the checksum
-			updateChecksumInDatabase(imagePath, checksum)
+// 			// Update the database with the checksum
+// 			updateChecksumInDatabase(imagePath, checksum)
 
-			// Update the label with the number of images processed
-			app.QueueUpdate(func() {
-				imageCountLabel.SetText(fmt.Sprintf("Images found: %d", i+1))
-			})
-		}
+// 			// Update the label with the number of images processed
+// 			fyne.CurrentApp().Driver().RunOnMain(func() {
+// 				imageCountLabel.SetText(fmt.Sprintf("Images found: %d", i+1))
+// 			})
+// 		}
 
-		// Close the progress window when done
-		app.QueueUpdate(func() {
-			progressWindow.Close()
-		})
-	}()
-}
+// 		// Close the progress window when done
+// 		fyne.CurrentApp().Driver().
+// 			fyne.CurrentApp().Driver().RunOnMain(func() {
+// 			progressWindow.Close()
+// 		})
+// 	}()
+// }
 
 func isImageFile(path string) bool {
 	// Get the file extension

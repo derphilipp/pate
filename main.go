@@ -27,6 +27,10 @@ func main() {
 		}, myWindow)
 	}
 
+	calculateChecksumsHandler := func() {
+		go checksumFiles(myApp)
+	}
+
 	selectOutputHandler := func() {
 		outputWindow := myApp.NewWindow("Select Output")
 		outputWindow.SetContent(widget.NewLabel("Select Output Window Content"))
@@ -49,6 +53,7 @@ func main() {
 
 	// Create buttons
 	selectInputBtn := widget.NewButton("Select Input", selectInputHandler)
+	calculateChecksumsBtn := widget.NewButton("Calculate Checksums", calculateChecksumsHandler)
 	swipeBtn := widget.NewButton("Swipe", swipeHandlerFunc)
 	selectOutputBtn := widget.NewButton("Select Output", selectOutputHandler)
 	copyBtn := widget.NewButton("Copy", copyHandler)
@@ -57,6 +62,7 @@ func main() {
 	// Add buttons to a vertical box layout
 	content := container.NewVBox(
 		selectInputBtn,
+		calculateChecksumsBtn,
 		swipeBtn,
 		selectOutputBtn,
 		copyBtn,

@@ -38,20 +38,37 @@ func getUndecidedImage() (string, error) {
 	return path, err
 }
 
-func getImagesFromDatabase() ([]string, error) {
+func getUnchecksummedImagesFromDatabase() ([]string, error) {
 	// var path string
-	rows, err := db.Query("SELECT path FROM images WHERE checksum = ''")
+	rows, err := db.Query("SELECT path FROM images WHERE checksum is NULL")
 	defer rows.Close()
 	var paths []string
 	for rows.Next() {
-		rows.Scan(&paths)
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
 	}
+
 	return paths, err
 }
 
 func updateDecision(imagePath string, decision string) {
 	statement, _ := db.Prepare("UPDATE images SET decision = ? WHERE path = ?")
 	statement.Exec(decision, imagePath)
+}
+
+func countNonchecksummedFiles() int64 {
+	var count int64
+	db.QueryRow("SELECT COUNT(*) FROM images WHERE checksum is NULL").Scan(&count)
+	return count
+}
+
+func getAllNonchecksummedFiles() int64 {
+	var count int64
+	db.QueryRow("SELECT path FROM images WHERE checksum is NULL").Scan(&count)
+	return count
 }
 
 func updateChecksumInDatabase(imagePath string, checksum string) {
@@ -67,4 +84,26 @@ func insertImagePathIntoDatabase(imagePath string) {
 	if err != nil {
 		log.Printf("Failed to insert image path %s: %v", imagePath, err)
 	}
+}
+
+func insertImagePathsIntoDatabase(imagePath []string) {
+	// Insert the image path into the database
+	tx, err := db.Begin()
+	if err != nil {
+		panic(err)
+	}
+
+	insertSQL := `INSERT OR IGNORE INTO images (path) VALUES (?);`
+	stmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, path := range imagePath {
+		_, err = stmt.Exec(path)
+		if err != nil {
+			panic(err)
+		}
+	}
+	tx.Commit()
 }
