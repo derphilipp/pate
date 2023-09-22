@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/derphilipp/pate/database"
 )
 
 func swipeHandler(app fyne.App) {
@@ -20,7 +21,7 @@ func swipeHandler(app fyne.App) {
 	// Function to load and display an image
 	loadImage = func() {
 		// Load the first undecided image
-		imagePath, err := getUndecidedImage()
+		imagePath, err := database.GetUndecidedImage()
 		if err != nil {
 			// Check if there are no more undecided images
 			if err == sql.ErrNoRows {
@@ -47,12 +48,12 @@ func swipeHandler(app fyne.App) {
 		image.SetMinSize(fyne.NewSize(640, 480))
 
 		leftBtn := widget.NewButton("Left", func() {
-			updateDecision(imagePath, "not_copied")
+			database.UpdateDecision(imagePath, "not_copied")
 			loadImage() // Load the next image
 		})
 
 		rightBtn := widget.NewButton("Right", func() {
-			updateDecision(imagePath, "copied")
+			database.UpdateDecision(imagePath, "copied")
 			loadImage() // Load the next image
 		})
 
