@@ -10,11 +10,15 @@ import (
 	"github.com/derphilipp/pate/database"
 )
 
+func ChecksumNothing() {
+	fmt.Println("ChecksumNothing")
+}
+
 func ChecksumWorker(inputChan <-chan string, batchChan chan<- database.FileChecksum, progressCh chan<- int, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for filePath := range inputChan {
-		checksum, err := calculateChecksum(filePath)
+		checksum, err := CalculateChecksum(filePath)
 		progressCh <- 1
 		if err != nil {
 			fmt.Printf("Error calculating checksum for %s: %v\n", filePath, err)
@@ -25,7 +29,7 @@ func ChecksumWorker(inputChan <-chan string, batchChan chan<- database.FileCheck
 	}
 }
 
-func calculateChecksum(filePath string) (string, error) {
+func CalculateChecksum(filePath string) (string, error) {
 	fileData, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", err

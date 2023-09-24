@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -12,7 +11,15 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/derphilipp/pate/checksum"
 	"github.com/derphilipp/pate/database"
+	"github.com/sirupsen/logrus"
+
+	"github.com/sourcegraph/conc/pool"
 )
+
+type ChecksumProgress struct {
+	processedCount int64
+	amount         int64
+}
 
 func main() {
 	myApp := app.New()
@@ -87,15 +94,38 @@ func main() {
 	myWindow.ShowAndRun()
 }
 
-// func CalcAllChecksum(){
+func CalcAllChecksum(totalProgressCh chan<- ChecksumProgress) {
+	const numWorkers = 24
 
-// }
+	amount := database.CountNonchecksummedFiles()
+	uncheckedImages, _ := database.GetUnchecksummedImagesFromDatabase()
+
+	batchChan := make(chan database.FileChecksum, 256)
+
+	go database.ChecksumWriter(batchChan, nil)
+
+	p := pool.New().WithMaxGoroutines(numWorkers)
+	for _, uncheckedImage := range uncheckedImages {
+		uncheckedImage := uncheckedImage
+		p.Go(func() {
+			sum, err := checksum.CalculateChecksum(uncheckedImage)
+			if err != nil {
+				logrus.Warnf("Error calculating checksum for %s: %v\n", uncheckedImage, err)
+			} else {
+				// fmt.Printf("Checksum for %s: %s\n", uncheckedImage, sum)
+				batchChan <- database.FileChecksum{FilePath: uncheckedImage, Checksum: sum}
+			}
+			totalProgressCh <- ChecksumProgress{processedCount: 1, amount: amount}
+			//		progressCh <- 1
+		})
+	}
+	p.Wait()
+	close(batchChan)
+}
 
 func ChecksumFiles(app fyne.App) {
 	fmt.Printf("Current time and date before checksum: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 
-	amount := database.CountNonchecksummedFiles()
-	uncheckedImages, _ := database.GetUnchecksummedImagesFromDatabase()
 	progress := widget.NewProgressBar()
 	progressLabel := widget.NewLabel("Checksumming files")
 	progressContainer := container.NewVBox(progressLabel, progress)
@@ -103,47 +133,23 @@ func ChecksumFiles(app fyne.App) {
 
 	progressWindow.SetContent(progressContainer)
 	progressWindow.Show()
+	checksumProgressChan := make(chan ChecksumProgress)
 
-	const numWorkers = 16
+	go func(progressChan <-chan ChecksumProgress) {
+		var processedCount int64 = 0
+		for justProcessed := range progressChan {
+			processedCount += justProcessed.processedCount
+			progress.SetValue(float64(processedCount) / float64(justProcessed.amount))
+			// progressCh <- progress.SetValue(float64(processedCount) / float64(amount))
+			labelText := fmt.Sprintf("Processed %d out of %d files", processedCount, justProcessed.amount)
+			// fmt.Println(labelText)
+			progressLabel.SetText(labelText)
 
-	inputChan := make(chan string, amount)
-	progressCh := make(chan int, numWorkers)
-	batchChan := make(chan database.FileChecksum, amount)
-
-	go database.ChecksumWriter(batchChan, nil)
-
-	var wg sync.WaitGroup
-
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go checksum.ChecksumWorker(inputChan, batchChan, progressCh, &wg)
-	}
-
-	go func() {
-		for _, filePath := range uncheckedImages {
-			inputChan <- filePath
 		}
-		fmt.Printf("Done inputting....")
-		close(inputChan)
-	}()
+	}(checksumProgressChan)
 
-	go func() {
-		wg.Wait()
-		close(progressCh)
-		close(batchChan)
-	}()
-
-	processedCount := 0
-
-	for justProcessed := range progressCh {
-		processedCount += justProcessed
-		progress.SetValue(float64(processedCount) / float64(amount))
-		progressLabel.SetText(fmt.Sprintf("Processed %d out of %d files", processedCount, amount))
-
-		if int64(processedCount) == amount {
-			break
-		}
-	}
+	CalcAllChecksum(checksumProgressChan)
+	// xxxx
 
 	progressWindow.Close()
 	fmt.Printf("Current time and date after checksum: %s\n", time.Now().Format("2006-01-02 15:04:05"))

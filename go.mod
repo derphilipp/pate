@@ -5,6 +5,8 @@ go 1.21.1
 require (
 	fyne.io/fyne/v2 v2.4.0
 	github.com/charlievieth/fastwalk v1.0.1
+	github.com/sirupsen/logrus v1.8.1
+	github.com/sourcegraph/conc v0.3.0
 	modernc.org/sqlite v1.25.0
 )
 
@@ -34,6 +36,8 @@ require (
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/tevino/abool v1.2.0 // indirect
 	github.com/yuin/goldmark v1.5.6 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/image v0.12.0 // indirect
 	golang.org/x/mobile v0.0.0-20230922142353-e2f452493d57 // indirect
 	golang.org/x/mod v0.12.0 // indirect
