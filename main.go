@@ -52,6 +52,9 @@ func main() {
 		go ChecksumFiles(myApp)
 	}
 
+	findDuplicatesHandler := func() {
+		go DuplicateFiles(myApp)
+	}
 	selectOutputHandler := func() {
 		outputWindow := myApp.NewWindow("Select Output")
 		outputWindow.SetContent(widget.NewLabel("Select Output Window Content"))
@@ -75,6 +78,7 @@ func main() {
 	// Create buttons
 	selectInputBtn := widget.NewButton("Select Input", selectInputHandler)
 	calculateChecksumsBtn := widget.NewButton("Calculate Checksums", calculateChecksumsHandler)
+	findDuplicatesBtn := widget.NewButton("Find Duplicates", findDuplicatesHandler)
 	swipeBtn := widget.NewButton("Swipe", swipeHandlerFunc)
 	selectOutputBtn := widget.NewButton("Select Output", selectOutputHandler)
 	copyBtn := widget.NewButton("Copy", copyHandler)
@@ -84,6 +88,7 @@ func main() {
 	content := container.NewVBox(
 		selectInputBtn,
 		calculateChecksumsBtn,
+		findDuplicatesBtn,
 		swipeBtn,
 		selectOutputBtn,
 		copyBtn,
@@ -121,6 +126,10 @@ func CalcAllChecksum(totalProgressCh chan<- ChecksumProgress) {
 	}
 	p.Wait()
 	close(batchChan)
+}
+
+func DuplicateFiles(app fyne.App) {
+	database.DetectAndHandleDuplicates()
 }
 
 func ChecksumFiles(app fyne.App) {
