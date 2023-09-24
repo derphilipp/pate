@@ -1,8 +1,11 @@
 package database
 
 import (
+	"image"
 	"log"
+	"os"
 
+	"github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite"
 )
 
@@ -27,6 +30,23 @@ func GetUndecidedImage() (string, error) {
 	return path, err
 }
 
+func GetNextNImages(n int) ([]string, error) {
+	var paths []string
+	rows, err := db.Query("SELECT path FROM images WHERE decision IS NULL LIMIT ?", n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
 func GetUnchecksummedImagesFromDatabase() ([]string, error) {
 	// var path string
 	rows, err := db.Query(`
@@ -42,6 +62,35 @@ func GetUnchecksummedImagesFromDatabase() ([]string, error) {
 	}
 	defer rows.Close()
 	return paths, err
+}
+
+func LoadSingleFile(path string) image.Image {
+	f, err := os.Open(path)
+	if err != nil {
+		logrus.Warn(err)
+		// Handle error
+	}
+	defer f.Close()
+
+	img, _, err := image.Decode(f)
+	if err != nil {
+		logrus.Warn(err)
+		// Handle error
+	}
+	return img
+}
+
+func GetUnchecksummedImagesFiles(imageCh chan<- image.Image) error {
+	files, err := GetUnchecksummedImagesFromDatabase()
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		// Load a single file
+		img := LoadSingleFile(file)
+		imageCh <- img
+	}
+	return nil
 }
 
 func UpdateDecision(imagePath string, decision string) {
@@ -134,4 +183,21 @@ func GetSetting(key string) string {
 		log.Fatal(err)
 	}
 	return value
+}
+
+func GetAllUndecidedPaths() ([]string, error) {
+	// var path string
+	rows, err := db.Query(`
+		SELECT path FROM images WHERE decision is 'undecided'
+		`)
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	defer rows.Close()
+	return paths, err
 }
