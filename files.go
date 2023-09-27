@@ -19,16 +19,25 @@ func scanDirectory(dir string, app fyne.App) {
 	progressWindow.SetContent(progressContainer)
 	progressWindow.Show()
 
-	progressCh := make(chan filewalker.ProgressInfo)
+	progressCh := make(chan filewalker.Progress, 100)
+	fileWalkerCh := make(chan string, 1024)
 
-	go func(p <-chan filewalker.ProgressInfo) {
+	go func(p <-chan filewalker.Progress) {
 		for x := range p {
-			progressLabel.SetText(fmt.Sprintf("Found %d images out of %d files", x.ImageFiles, x.TotalFiles))
+			progressLabel.SetText(fmt.Sprintf("Found %d images out of %d files", x.FoundFiles, x.SearchedFiles))
 		}
 	}(progressCh)
 
 	database.SetImageBasePath(dir)
-	allImageFiles := filewalker.WalkForMe(dir, progressCh)
+
+	go filewalker.SearchJPEGFiles(dir, fileWalkerCh, progressCh)
+	var allImageFiles []string
+	for image := range fileWalkerCh {
+		allImageFiles = append(allImageFiles, image)
+	}
+	fmt.Printf("All done, found %d images\n", len(allImageFiles))
+	// allImageFiles := filewalker.WalkForMe(dir, progressCh)
+
 	database.InsertImagePathsIntoDatabase(allImageFiles)
 	progress.Stop()
 	progressWindow.Close()
