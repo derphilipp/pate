@@ -1,66 +1,84 @@
 package filewalker
 
 import (
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charlievieth/fastwalk"
+	"github.com/sirupsen/logrus"
 )
 
 var conf = fastwalk.Config{
 	Follow: false,
 }
 
-// this defines a structure of two interger: one for the current amount already processed and one for the total amount to process
-type ProgressInfo struct {
-	ImageFiles int
-	TotalFiles int
+type Progress struct {
+	FoundFiles    int
+	SearchedFiles int
 }
 
-func WalkForMe(dir string, progressCh chan<- ProgressInfo) []string {
-	var totalFiles, imageFiles int
-	var allImageFiles []string
-
-	var mu sync.Mutex
-
-	// Create a channel to control the number of concurrent goroutines
-	sem := make(chan struct{}, 16) // Assuming 4 cores, adjust as needed
-
+func SearchJPEGFiles(root string, fileCh chan<- string, progressCh chan<- Progress) {
 	var wg sync.WaitGroup
+	var mutex sync.Mutex
 
-	walkFn := func(path string, d fs.DirEntry, err error) error {
+	var totalSearched int
+	var totalFound int
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+
+	go func() {
+		for range ticker.C {
+			mutex.Lock()
+			if progressCh != nil {
+				progressCh <- Progress{
+					FoundFiles:    totalFound,
+					SearchedFiles: totalSearched,
+				}
+			}
+			mutex.Unlock()
+		}
+	}()
+
+	walkFn := func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
+			logrus.Warnf("Could not access directory: %v", err)
 			return nil
+			// return err
 		}
 
-		sem <- struct{}{} // Acquire a token
 		wg.Add(1)
-
-		go func(p string) {
-			defer func() {
-				<-sem // Release the token
-				wg.Done()
-			}()
-
-			if isImage(p) {
-				mu.Lock()
-				imageFiles++
-				allImageFiles = append(allImageFiles, p)
-				mu.Unlock()
+		go func() {
+			defer wg.Done()
+			// extension := strings.ToLower(filepath.Ext(path))
+			// convert extension to lowercase
+			if isImage(path) {
+				// if extension == ".jpeg" {
+				fileCh <- path
+				mutex.Lock()
+				totalFound++
+				mutex.Unlock()
 			}
 
-			mu.Lock()
-			totalFiles++
-			progressCh <- ProgressInfo{imageFiles, totalFiles}
-			mu.Unlock()
-		}(path)
+			mutex.Lock()
+			totalSearched++
+			mutex.Unlock()
+		}()
+
 		return nil
 	}
 
-	fastwalk.Walk(&conf, dir, walkFn)
-	return allImageFiles
+	err := fastwalk.Walk(&conf, root, walkFn)
+	if err != nil {
+		fmt.Printf("Error walking directory: %v\n", err)
+	}
+
+	wg.Wait()
+	close(fileCh)
+	ticker.Stop()
 }
 
 // Supported image extensions

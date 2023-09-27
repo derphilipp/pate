@@ -142,7 +142,7 @@ func ChecksumFiles(app fyne.App) {
 
 	progressWindow.SetContent(progressContainer)
 	progressWindow.Show()
-	checksumProgressChan := make(chan ChecksumProgress)
+	checksumProgressChan := make(chan ChecksumProgress, 1024)
 
 	go func(progressChan <-chan ChecksumProgress) {
 		var processedCount int64 = 0

@@ -35,7 +35,7 @@ func scanDirectory(dir string, app fyne.App) {
 	for image := range fileWalkerCh {
 		allImageFiles = append(allImageFiles, image)
 	}
-	fmt.Printf("All done, found %d images\n", len(allImageFiles))
+	fmt.Printf("\nAll done, found %d images\n", len(allImageFiles))
 	// allImageFiles := filewalker.WalkForMe(dir, progressCh)
 
 	database.InsertImagePathsIntoDatabase(allImageFiles)
