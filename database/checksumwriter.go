@@ -15,7 +15,7 @@ type FileChecksum struct {
 }
 
 func ChecksumWriter(checksumUpdates <-chan FileChecksum, progressCh chan<- int) {
-	var count int = 0
+	var count = 0
 
 	// Start the initial transaction
 	tx, err := db.Begin()

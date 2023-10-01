@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"image"
-	"log"
 	"path/filepath"
 
 	"fyne.io/fyne/v2"
@@ -14,8 +13,6 @@ import (
 	"github.com/derphilipp/pate/database"
 	"github.com/sirupsen/logrus"
 )
-
-var imageCache = make([]string, 0)
 
 func swipeHandler(app fyne.App) {
 	var loadImage func()
@@ -89,10 +86,10 @@ func swipeHandler(app fyne.App) {
 	swipeWindow.Show()
 }
 
-func refreshSwipeWindow(win fyne.Window, app fyne.App) {
-	win.Close()
-	swipeHandler(app)
-}
+// func refreshSwipeWindow(win fyne.Window, app fyne.App) {
+// 	win.Close()
+// 	swipeHandler(app)
+// }
 
 type ImageCache struct {
 	image image.Image
@@ -117,20 +114,20 @@ func alwaysHaveNImagesLoaded(size int) <-chan ImageCache {
 	return imageCh
 }
 
-func loadNextImage() string {
-	if len(imageCache) == 0 {
-		// If the cache is empty, preload the next N images
-		paths, err := database.GetNextNImages(5) // Preload the next 5 images
-		if err != nil {
-			log.Println("Failed to load images:", err)
-			return ""
-		}
-		imageCache = append(imageCache, paths...)
-	}
+// func loadNextImage() string {
+// 	if len(imageCache) == 0 {
+// 		// If the cache is empty, preload the next N images
+// 		paths, err := database.GetNextNImages(5) // Preload the next 5 images
+// 		if err != nil {
+// 			log.Println("Failed to load images:", err)
+// 			return ""
+// 		}
+// 		imageCache = append(imageCache, paths...)
+// 	}
 
-	// Get the next image from the cache
-	imagePath := imageCache[0]
-	imageCache = imageCache[1:]
+// 	// Get the next image from the cache
+// 	imagePath := imageCache[0]
+// 	imageCache = imageCache[1:]
 
-	return imagePath
-}
+// 	return imagePath
+// }
