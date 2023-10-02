@@ -22,6 +22,8 @@ type Progress struct {
 }
 
 func SearchImageFiles(root string, fileCh chan<- string, progressCh chan<- Progress) {
+	defer close(fileCh)
+	defer close(progressCh)
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
@@ -77,8 +79,14 @@ func SearchImageFiles(root string, fileCh chan<- string, progressCh chan<- Progr
 	}
 
 	wg.Wait()
-	close(fileCh)
 	ticker.Stop()
+	// One last report to the progress channel
+	if progressCh != nil {
+		progressCh <- Progress{
+			FoundFiles:    totalFound,
+			SearchedFiles: totalSearched,
+		}
+	}
 }
 
 // Supported image extensions
