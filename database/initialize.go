@@ -22,7 +22,8 @@ func InitDatabase() {
 				path TEXT PRIMARY KEY,
 				checksum TEXT,
 				decision TEXT DEFAULT 'undecided',
-				duplicate TEXT DEFAULT 'no'
+				duplicate TEXT DEFAULT 'no',
+				valid TEXT DEFAULT 'unknown'
 			)
 		`)
 	statement.Exec()

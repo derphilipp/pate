@@ -100,6 +100,13 @@ func UpdateDecision(imagePath string, decision string) {
 	statement.Exec(decision, imagePath)
 }
 
+func UpdateValid(imagePath string, valid string) {
+	statement, _ := db.Prepare(`
+		UPDATE images SET valid = ? WHERE path = ?
+		`)
+	statement.Exec(valid, imagePath)
+}
+
 func CountNonchecksummedFiles() int64 {
 	var count int64
 	db.QueryRow(`
@@ -189,6 +196,23 @@ func GetAllUndecidedPaths() ([]string, error) {
 	// var path string
 	rows, err := db.Query(`
 		SELECT path FROM images WHERE decision is 'undecided'
+		`)
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	defer rows.Close()
+	return paths, err
+}
+
+func GetAllPaths() ([]string, error) {
+	// var path string
+	rows, err := db.Query(`
+		SELECT path FROM images
 		`)
 	var paths []string
 	for rows.Next() {

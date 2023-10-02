@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/derphilipp/pate/checksum"
 	"github.com/derphilipp/pate/database"
+	"github.com/derphilipp/pate/validimage"
 	"github.com/sirupsen/logrus"
 
 	"github.com/sourcegraph/conc/pool"
@@ -52,6 +53,10 @@ func main() {
 		go ChecksumFiles(myApp)
 	}
 
+	checkValidImageHandler := func() {
+		go CheckValidImages(myApp)
+	}
+
 	findDuplicatesHandler := func() {
 		go DuplicateFiles(myApp)
 	}
@@ -77,6 +82,7 @@ func main() {
 
 	// Create buttons
 	selectInputBtn := widget.NewButton("Select Input", selectInputHandler)
+	checkValidImageBtn := widget.NewButton("Check Valid Images", checkValidImageHandler)
 	calculateChecksumsBtn := widget.NewButton("Calculate Checksums", calculateChecksumsHandler)
 	findDuplicatesBtn := widget.NewButton("Find Duplicates", findDuplicatesHandler)
 	swipeBtn := widget.NewButton("Swipe", swipeHandlerFunc)
@@ -88,6 +94,7 @@ func main() {
 	content := container.NewVBox(
 		selectInputBtn,
 		calculateChecksumsBtn,
+		checkValidImageBtn,
 		findDuplicatesBtn,
 		swipeBtn,
 		selectOutputBtn,
@@ -97,6 +104,35 @@ func main() {
 
 	myWindow.SetContent(content)
 	myWindow.ShowAndRun()
+}
+
+func CheckValidImages(app fyne.App) {
+	progress := widget.NewProgressBar()
+	progressLabel := widget.NewLabel("Checking if files are valid")
+	progressContainer := container.NewVBox(progressLabel, progress)
+	progressWindow := app.NewWindow("Checksum Progress")
+
+	progressWindow.SetContent(progressContainer)
+	progressWindow.Show()
+	defer progressWindow.Close()
+	checkImageProgressChan := make(chan validimage.Progress, 1024)
+	checkImageValidChan := make(chan validimage.Result, 1024)
+
+	go func(progressChan <-chan validimage.Progress) {
+		var processedCount int64 = 0
+		fmt.Printf("A")
+		for justProcessed := range progressChan {
+			processedCount += int64(justProcessed.Processed)
+			progress.SetValue(float64(justProcessed.Processed) / float64(justProcessed.TotalFilepaths))
+			labelText := fmt.Sprintf("%d valid, processed %d / %d files", justProcessed.ValidImages, justProcessed.Processed, justProcessed.TotalFilepaths)
+			progressLabel.SetText(labelText)
+
+		}
+	}(checkImageProgressChan)
+	images, _ := database.GetAllPaths()
+	validimage.ProcessImages(images, checkImageValidChan, checkImageProgressChan)
+
+	fmt.Printf("Current time and date after checksum: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 }
 
 func CalcAllChecksum(totalProgressCh chan<- ChecksumProgress) {
@@ -142,6 +178,7 @@ func ChecksumFiles(app fyne.App) {
 
 	progressWindow.SetContent(progressContainer)
 	progressWindow.Show()
+	defer progressWindow.Close()
 	checksumProgressChan := make(chan ChecksumProgress, 1024)
 
 	go func(progressChan <-chan ChecksumProgress) {
@@ -160,6 +197,5 @@ func ChecksumFiles(app fyne.App) {
 	CalcAllChecksum(checksumProgressChan)
 	// xxxx
 
-	progressWindow.Close()
 	fmt.Printf("Current time and date after checksum: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 }

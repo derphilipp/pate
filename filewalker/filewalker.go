@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charlievieth/fastwalk"
@@ -24,24 +23,19 @@ type Progress struct {
 func SearchImageFiles(root string, fileCh chan<- string, progressCh chan<- Progress) {
 	defer close(fileCh)
 	defer close(progressCh)
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
 
 	var totalSearched int
 	var totalFound int
 
 	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 
 	go func() {
 		for range ticker.C {
-			mutex.Lock()
-			if progressCh != nil {
-				progressCh <- Progress{
-					FoundFiles:    totalFound,
-					SearchedFiles: totalSearched,
-				}
+			progressCh <- Progress{
+				FoundFiles:    totalFound,
+				SearchedFiles: totalSearched,
 			}
-			mutex.Unlock()
 		}
 	}()
 
@@ -49,27 +43,13 @@ func SearchImageFiles(root string, fileCh chan<- string, progressCh chan<- Progr
 		if err != nil {
 			logrus.Warnf("Could not access directory: %v", err)
 			return nil
-			// return err
 		}
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// extension := strings.ToLower(filepath.Ext(path))
-			// convert extension to lowercase
-			if isImage(path) {
-				// if extension == ".jpeg" {
-				fileCh <- path
-				mutex.Lock()
-				totalFound++
-				mutex.Unlock()
-			}
-
-			mutex.Lock()
-			totalSearched++
-			mutex.Unlock()
-		}()
-
+		if isImage(path) {
+			fileCh <- path
+			totalFound++
+		}
+		totalSearched++
 		return nil
 	}
 
@@ -78,8 +58,6 @@ func SearchImageFiles(root string, fileCh chan<- string, progressCh chan<- Progr
 		fmt.Printf("Error walking directory: %v\n", err)
 	}
 
-	wg.Wait()
-	ticker.Stop()
 	// One last report to the progress channel
 	if progressCh != nil {
 		progressCh <- Progress{
