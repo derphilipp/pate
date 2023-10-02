@@ -30,7 +30,7 @@ func scanDirectory(dir string, app fyne.App) {
 
 	database.SetImageBasePath(dir)
 
-	go filewalker.SearchJPEGFiles(dir, fileWalkerCh, progressCh)
+	go filewalker.SearchImageFiles(dir, fileWalkerCh, progressCh)
 	var allImageFiles []string
 	for image := range fileWalkerCh {
 		allImageFiles = append(allImageFiles, image)

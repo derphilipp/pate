@@ -21,7 +21,7 @@ type Progress struct {
 	SearchedFiles int
 }
 
-func SearchJPEGFiles(root string, fileCh chan<- string, progressCh chan<- Progress) {
+func SearchImageFiles(root string, fileCh chan<- string, progressCh chan<- Progress) {
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 
